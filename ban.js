@@ -1,0 +1,11 @@
+const log = require('./log.js').log;
+const fs = require('fs-extra');
+const io = require('./index.js').io;
+let bans = {};
+exports.init = function(){ try { if(!fs.existsSync('./bans.json')) fs.writeFileSync('./bans.json','{}'); bans=JSON.parse(fs.readFileSync('./bans.json','utf8')||'{}'); console.log('Ban list loaded.'); } catch(e){ console.error('Could not load bans.json:',e); bans={}; } };
+exports.saveBans = function(){ fs.writeFileSync('./bans.json',JSON.stringify(bans,null,2)); };
+exports.addBan = function(ip,length,reason,bannedBy){ let end=(length===null||length===undefined)?null:Date.now()+Number(length)*60000; if(!Number.isFinite(end)) end=null; bans[ip]={reason:reason||'N/A',end:end,bannedBy:bannedBy||'N/A'}; const sockets=io.sockets.sockets; Object.keys(sockets).forEach(id=>{const socket=sockets[id];if(socket.request.connection.remoteAddress===ip) exports.handleBan(socket);}); exports.saveBans(); };
+exports.removeBan=function(ip){delete bans[ip];exports.saveBans();};
+exports.handleBan=function(socket){const ip=socket.request.connection.remoteAddress,ban=bans[ip];if(!ban)return false;if(ban.end!==null&&ban.end<=Date.now()){exports.removeBan(ip);return false;}log.access.log('info','ban',{ip,reason:ban.reason,bannedBy:ban.bannedBy});socket.emit('ban',{reason:ban.reason||'N/A',end:ban.end,bannedBy:ban.bannedBy||'N/A'});socket.disconnect();return true;};
+exports.kick=function(ip,reason,kickedBy){const sockets=io.sockets.sockets;Object.keys(sockets).forEach(id=>{const socket=sockets[id];if(socket.request.connection.remoteAddress===ip){socket.emit('kick',{reason:reason||'N/A',kickedBy:kickedBy||'N/A'});socket.disconnect();}});};
+exports.isBanned=function(ip){if(!bans[ip])return false;if(bans[ip].end!==null&&bans[ip].end<=Date.now()){exports.removeBan(ip);return false;}return true;};
